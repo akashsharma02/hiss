@@ -13,9 +13,13 @@ HiSS is a simple technique that stacks deep state space models like [S4]() and [
 ## Installation
 1. Clone the repository
 
-2. Create a conde environment from the provided `env.yml` file: ```conda env create -f env.yml```
+2. Create a conda environment from the provided `env.yml` file: ```conda env create -f env.yml```
 
-3. Install Mamba based on the official [instructions](https://github.com/state-spaces/mamba/tree/main?tab=readme-ov-file#installation).
+3. Install Mamba 1 based on the official [instructions](https://github.com/state-spaces/mamba/tree/main?tab=readme-ov-file#installation). Make sure to install version 1.2 with 
+```bash
+pip install mamba-ssm==1.2.2
+```
+
 
 Note: If you run into CUDA issues while installing Mamba, run ```export CUDA_HOME=$CONDA_PREFIX```, and try again. If you still have problems, install both `causal_conv1d` and `mamba-ssm` from source.
 
