@@ -1,10 +1,9 @@
 defaults:
-- config
-- override model: hierarchical_s4
-- override data_env: JoystickControlEnv
-- override model/hl_model@model.model.hl_model: mamba
-- _self_
-
+  - config
+  - override model: hierarchical_s4
+  - override data_env: JoystickControlEnv
+  - override model/hl_model@model.model.hl_model: mamba
+  - _self_
 model:
   model:
     model_dim: 256

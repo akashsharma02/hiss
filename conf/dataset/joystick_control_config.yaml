@@ -1,6 +1,7 @@
 data_dir: joystick_control_hiss_dataset
-input_data_suffix: processed
-data_suffix: x50e5
+input_data_suffix: processed_sensor_pose
+data_suffix: x100e10_raw_sensorpose
 freq:
-  extreme3d: 5
-  xela: 50
+  extreme3d: 10
+  xela: 100
+  allegro_joint_states: 100

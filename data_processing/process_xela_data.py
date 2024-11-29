@@ -36,12 +36,17 @@ if __name__ == "__main__":
         default="processed",
         help="Suffix to append to the processed data file",
     )
+    parser.add_argument(
+        "--vis", "-v", action="store_true", default=False, help="Visualize data"
+    )
     args = parser.parse_args()
+    VIS = args.vis
 
     # List modalities to process.
-    modalities = ["xela", "extreme3d"]
+    modalities = ["xela", "extreme3d", "allegro_joint_states"]
     demo_dirs = get_demo_dirs(args.dataset_dir)
     proc_data_path = get_data_path(args.dataset_dir, args.data_suffix)
+    print(f"Writing to: {proc_data_path}")
 
     dur_list = []
     data_list = []
@@ -100,11 +105,32 @@ if __name__ == "__main__":
             done_list = [True] * len(data_list)
     for m in freq_lists:
         print(f"{m}: {np.mean(freq_lists[m])}")
-    # dur_list = np.array(dur_list)
+
     pardir = os.path.abspath(os.path.join(proc_data_path, os.pardir))
     if not os.path.exists(pardir):
         os.makedirs(pardir)
     data_list = aggregate_list_of_dicts(data_list)
+    xela_data = np.array(data["xela"])
+    xela_data = xela_data.reshape(xela_data.shape[0], -1, 3)
+    xela_data = xela_data.reshape(-1, 3)
+
+    # Visualize Xela data histogram
+    if VIS:
+        import matplotlib.pyplot as plt
+
+        ax0 = plt.subplot(1, 3, 1)
+
+        ax0.hist(xela_data[:, 0], bins=100)
+        ax0.set_yscale("log")
+        ax1 = plt.subplot(1, 3, 2)
+        ax1.hist(xela_data[:, 1], bins=100)
+        ax1.set_yscale("log")
+        ax2 = plt.subplot(1, 3, 3)
+        ax2.hist(xela_data[:, 2], bins=100)
+        ax2.set_yscale("log")
+        plt.suptitle("Xela Data Histogram")
+        plt.show()
+
     for m in modalities:
         data_list[f"{m}_episode_ids"] = mod_eids[m]
     with h5py.File(proc_data_path, "w") as hf:

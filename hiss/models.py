@@ -26,7 +26,7 @@ class LSTMNet(nn.Module):
         nlayers,
         dropout,
         *args,
-        **kwargs
+        **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self.model_type = "lstm"
@@ -105,7 +105,7 @@ class TransformerModel(nn.Module):
         dropout=0.5,
         prenorm=False,
         *args,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
         self.model_type = "Transformer"
@@ -207,7 +207,7 @@ class S4Model(nn.Module):
         dropout=0.2,
         prenorm=False,
         *args,
-        **kwargs
+        **kwargs,
     ):
         super().__init__()
         self.model_type = "s4_model"
@@ -393,7 +393,7 @@ class HierarchicalModel(nn.Module):
         hl_model,
         freq_ratio=10.0,
         *args,
-        **kwargs
+        **kwargs,
     ) -> None:
         super().__init__()
         self.model_type = "hierarchical"
@@ -408,7 +408,6 @@ class HierarchicalModel(nn.Module):
     def forward(self, x, has_mask=True):
         # Reshape x into B, Lc, C, D
         x = x.reshape(x.shape[0], -1, int(self.freq_ratio), x.shape[-1])
-
         proc_x = self.low_level(x.reshape(-1, *x.shape[2:]))[:, -1]
 
         proc_x = proc_x.reshape(*x.shape[:2], -1)

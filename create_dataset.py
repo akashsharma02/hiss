@@ -15,6 +15,7 @@ def main(cfg):
     with h5py.File(
         os.path.join(data_path, f"{cfg.data_dir}_{cfg.input_data_suffix}.h5")
     ) as hf:
+        print(f"hf.keys(): {hf.keys()}")
         ts = {m: np.array(hf[f"{m}_timestamps"]) for m in modalities}
         data = {m: np.array(hf[m]) for m in modalities}
         eids = {m: np.array(hf[f"{m}_episode_ids"]) for m in modalities}
@@ -23,12 +24,15 @@ def main(cfg):
         num_episodes = num_eps[0] - 1
 
     HZ = cfg.freq
+    train_frac = 0.9
     new_eids = {m: [0] for m in modalities}
     new_data = {m: [] for m in modalities}
     new_ts = {m: [] for m in modalities}
     offset_id_list = {m: [] for m in modalities}
     durations = []
-    ep_flag = [True] * num_episodes
+    ep_flag = np.ones(num_episodes, dtype=bool)
+    print(f"ep_flag: {ep_flag}")
+
     # Find initial and final indices for time alignment
     for n_ep in range(num_episodes):
         sids = {m: eids[m][n_ep] for m in modalities}
@@ -66,9 +70,9 @@ def main(cfg):
         ):
             if not ep_flag[eid]:
                 continue
+
             sid_off = sid + offset_id_list[m][eid][0]
             lid_off = lid - offset_id_list[m][eid][1]
-            # new_t = np.arange(0, ts[m][lid_off-1] - ts[m][sid_off], 1/HZ[m])
             if not "max_dur" in cfg:
                 max_dur = durations[eid]
             else:
@@ -87,13 +91,8 @@ def main(cfg):
             new_data[m].append(interp_data)
             new_eids[m].append(new_eids[m][-1] + len(interp_data))
             new_ts[m].append(new_t + ts[m][sid_off])
-            # print(f"episode: {eid}, m: {len(interp_data)}")
         new_data[m] = np.concatenate(new_data[m], axis=0)
         print(new_data[m].shape, new_eids[m][-1])
-    # print("before")
-    # print([(np.mean(data[m]), np.std(data[m])) for m in modalities])
-    # print("after")
-    # print([(np.mean(new_data[m]), np.std(new_data[m])) for m in modalities])
 
     # Write data to new file
     with h5py.File(

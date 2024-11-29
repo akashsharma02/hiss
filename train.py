@@ -7,6 +7,7 @@ import torch
 from hiss.tasks import Task
 from hiss.models import LowFreqPredictor
 from hiss.utils.data_utils import get_data_path
+from omegaconf import OmegaConf
 from hiss.utils.train_utils import (
     MaskedLoss,
     set_seed,
@@ -22,6 +23,8 @@ def main(cfg):
     log = logging.getLogger(__name__)
     logging.basicConfig(level=logging.INFO)
     log.setLevel(logging.DEBUG)
+
+    log.info(OmegaConf.to_yaml(cfg))
 
     # Standardized function to extract path to .h5 file containing data
     data_path = get_data_path(cfg.data_env.dataset_dir, cfg.data_env.data_suffix)
