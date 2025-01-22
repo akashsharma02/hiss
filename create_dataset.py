@@ -1,3 +1,4 @@
+import random
 import os
 import hydra
 import numpy as np
@@ -9,9 +10,13 @@ from hiss.utils import DATA_DIR
 
 @hydra.main(config_path="conf/dataset", config_name="config", version_base=None)
 def main(cfg):
+    random.seed(0)
+    np.random.seed(0)
     modalities = dict(cfg.freq).keys()
 
     data_path = f"{DATA_DIR}/{cfg.data_dir}"
+
+    print(f"Creating dataset for {data_path}")
 
     # Read file containing data
     with h5py.File(
@@ -30,8 +35,11 @@ def main(cfg):
     ep_flag = np.ones(num_episodes, dtype=bool)
     episode_ids = np.arange(num_episodes)
     shuffled_episode_ids = np.random.permutation(episode_ids)
-    train_ids = shuffled_episode_ids[: int(cfg.train_split * num_episodes)]
-    val_ids = shuffled_episode_ids[int(cfg.train_split * num_episodes) :]
+
+    print(f"Total episodes: {num_episodes}")
+
+    train_ids = shuffled_episode_ids[: cfg.num_selected_episodes]
+    val_ids = shuffled_episode_ids[cfg.num_selected_episodes :]
 
     print(f"Train episodes: {train_ids}")
     print(f"Validation episodes: {val_ids}")
@@ -65,7 +73,7 @@ def main(cfg):
         durations.append(np.floor(min(dur_list)))
 
     # Convert data to regularly sampled at specified frequency
-    for stage in ["train", "val"]:
+    for stage in ["train"]:  # , "val"]:
         ep_flag = np.ones(num_episodes, dtype=bool)
         if stage == "train":
             ep_flag[val_ids] = False
@@ -77,7 +85,10 @@ def main(cfg):
         new_ts = {m: [] for m in modalities}
 
         with h5py.File(
-            os.path.join(data_path, f"{cfg.data_dir}_{cfg.data_suffix}_{stage}.h5"),
+            os.path.join(
+                data_path,
+                f"{cfg.data_dir}_{cfg.data_suffix}_{cfg.num_selected_episodes}.h5",
+            ),
             "w",
         ) as hf:
             for m in modalities:
