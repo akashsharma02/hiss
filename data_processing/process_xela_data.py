@@ -1,9 +1,12 @@
 import h5py
 import os
 import argparse
+import einops
 
 import numpy as np
 from tqdm import tqdm
+import torch
+import pytorch_kinematics as pk
 
 import sys
 
@@ -15,6 +18,85 @@ from hiss.utils.data_utils import (
     get_demo_dirs,
 )
 from hiss.utils.data_utils import DATA_FILENAME, DICT_KEY
+
+XELA_FLATTEN_ORDER = {
+    "3aftc_palm_link": 30,
+    "link_15_4x4_palm_link": 16,
+    "link_14_4x4_palm_link": 16,
+    "0aftc_palm_link": 30,
+    "link_2_4x4_palm_link": 16,
+    "link_1A_4x4_palm_link": 16,
+    "link_1B_4x4_palm_link": 16,
+    "1aftc_palm_link": 30,
+    "link_6_4x4_palm_link": 16,
+    "link_5A_4x4_palm_link": 16,
+    "link_5B_4x4_palm_link": 16,
+    "2aftc_palm_link": 30,
+    "link_10_4x4_palm_link": 16,
+    "link_9A_4x4_palm_link": 16,
+    "link_9B_4x4_palm_link": 16,
+    "ahr_palm_2_4x6_palm_link": 24,
+    "ahr_palm_1_4x6_palm_link": 24,
+    "ahr_palm_3_4x6_palm_link": 24,
+}
+
+
+def get_sensor_grid(patch_name):
+    if "aftc" in patch_name:
+        h, w, d = 0.031, 0.039, 0.029  # numbers taken from mesh boundingbox
+        h_res, w_res = 6, 6
+        x = (
+            np.linspace(0.5 - h_res / 2, h_res / 2 + 0.5, h_res, endpoint=False)
+            * h
+            / h_res
+        )
+        y = np.linspace(0.5, w_res + 0.5, w_res, endpoint=False) * w / w_res
+        xx_, yy_ = np.meshgrid(x, y)
+        xx = np.concatenate(
+            [xx_[:4, :].flatten(), xx_[-2, 1:-1], xx_[-1, 2:-2]], axis=0
+        )
+        yy = np.concatenate(
+            [yy_[:4, :].flatten(), yy_[-2, 1:-1], yy_[-1, 2:-2]], axis=0
+        )
+    elif "4x4" in patch_name:
+        h, w, d = 0.026, 0.024, 0.0044  # numbers taken from mesh boundingbox
+        h_res, w_res = 4, 4
+        x = np.linspace(0.5, h_res + 0.5, h_res, endpoint=False) * h / h_res
+        y = np.linspace(0.5, w_res + 0.5, w_res, endpoint=False) * w / w_res
+        xx, yy = np.meshgrid(x, y)
+    elif "4x6" in patch_name:
+        h, w, d = 0.052, 0.032, 0.0  # numbers taken from mesh boundingbox
+        h_res, w_res = 6, 4
+        x = np.linspace(0.5, h_res + 0.5, h_res, endpoint=False) * h / h_res
+        y = np.linspace(0.5, w_res + 0.5, w_res, endpoint=False) * w / w_res
+        xx, yy = np.meshgrid(x, y)
+    return xx, yy, d
+
+
+def joint_angles_to_poses(xela_kinematic_chain, joint_angles: np.ndarray):
+    joint_angles = torch.tensor(joint_angles)
+    joint_poses = xela_kinematic_chain.forward_kinematics(joint_angles)
+    poses = []
+    for k, num_sensors in XELA_FLATTEN_ORDER.items():
+        joint_pose = joint_poses[k].get_matrix().numpy()
+        xx, yy, d = get_sensor_grid(k)
+        sensor_positions = np.stack([xx.flatten(), yy.flatten()], axis=-1)
+        sensor_positions = np.concatenate(
+            [sensor_positions, np.zeros_like(sensor_positions)], axis=-1
+        )
+        sensor_positions[..., -2] = d
+        sensor_positions[..., -1] = 1
+        t = joint_pose.shape[0]
+        joint_pose = einops.repeat(joint_pose, "t i j -> t s i j", s=num_sensors)
+        joint_pose = einops.rearrange(joint_pose, "t s i j -> (t s) i j")
+        sensor_positions = einops.repeat(sensor_positions, "s c -> (t s) c", t=t)
+        sensor_pose = np.einsum("m i j, m j -> m i", joint_pose, sensor_positions)
+        joint_pose[..., :, 3] = sensor_pose
+        joint_pose = einops.rearrange(joint_pose, "(t s) i j -> t s i j", s=num_sensors)
+        poses.append(joint_pose)
+    poses = np.concatenate(poses, axis=1)
+    positions = poses[..., :3, 3]
+    return positions
 
 
 if __name__ == "__main__":
@@ -37,13 +119,21 @@ if __name__ == "__main__":
         help="Suffix to append to the processed data file",
     )
     parser.add_argument(
+        "--urdf-path",
+        type=str,
+        default="/home/akashsharma/workspace/datasets/joystick_control_hiss_dataset/urdf/ahrcpcpn.urdf",
+        help="Path to the URDF file",
+    )
+    parser.add_argument(
         "--vis", "-v", action="store_true", default=False, help="Visualize data"
     )
     args = parser.parse_args()
     VIS = args.vis
+    urdf_path = args.urdf_path
+    xela_kinematic_chain = pk.build_chain_from_urdf(open(urdf_path).read())
 
     # List modalities to process.
-    modalities = ["xela", "extreme3d", "allegro_joint_states"]
+    modalities = ["xela", "extreme3d", "xela_sensor_pos"]
     demo_dirs = get_demo_dirs(args.dataset_dir)
     proc_data_path = get_data_path(args.dataset_dir, args.data_suffix)
     print(f"Writing to: {proc_data_path}")
@@ -84,6 +174,10 @@ if __name__ == "__main__":
                     data[m] -= baseline
                     data[m] = np.clip(data[m], -1000, 1000)
 
+                if m == "xela_sensor_pos":
+                    sensor_poses = joint_angles_to_poses(xela_kinematic_chain, values)
+                    sensor_poses = einops.rearrange(sensor_poses, "t n c -> t (n c)")
+                    data[m] = sensor_poses
                 dur_curr.append(np.around(timestamps[-1] - timestamps[0]))
                 if m == "extreme3d":
                     if min(dur_curr) < 15.0 or max(dur_curr) > 90.0:

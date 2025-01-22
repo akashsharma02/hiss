@@ -10,12 +10,13 @@ from hiss.utils import DATA_DIR
 @hydra.main(config_path="conf/dataset", config_name="config", version_base=None)
 def main(cfg):
     modalities = dict(cfg.freq).keys()
+
     data_path = f"{DATA_DIR}/{cfg.data_dir}"
+
     # Read file containing data
     with h5py.File(
         os.path.join(data_path, f"{cfg.data_dir}_{cfg.input_data_suffix}.h5")
     ) as hf:
-        print(f"hf.keys(): {hf.keys()}")
         ts = {m: np.array(hf[f"{m}_timestamps"]) for m in modalities}
         data = {m: np.array(hf[m]) for m in modalities}
         eids = {m: np.array(hf[f"{m}_episode_ids"]) for m in modalities}
@@ -24,15 +25,16 @@ def main(cfg):
         num_episodes = num_eps[0] - 1
 
     HZ = cfg.freq
-    train_frac = 0.9
-    new_eids = {m: [0] for m in modalities}
-    new_data = {m: [] for m in modalities}
-    new_ts = {m: [] for m in modalities}
     offset_id_list = {m: [] for m in modalities}
     durations = []
     ep_flag = np.ones(num_episodes, dtype=bool)
-    print(f"ep_flag: {ep_flag}")
+    episode_ids = np.arange(num_episodes)
+    shuffled_episode_ids = np.random.permutation(episode_ids)
+    train_ids = shuffled_episode_ids[: int(cfg.train_split * num_episodes)]
+    val_ids = shuffled_episode_ids[int(cfg.train_split * num_episodes) :]
 
+    print(f"Train episodes: {train_ids}")
+    print(f"Validation episodes: {val_ids}")
     # Find initial and final indices for time alignment
     for n_ep in range(num_episodes):
         sids = {m: eids[m][n_ep] for m in modalities}
@@ -63,47 +65,58 @@ def main(cfg):
         durations.append(np.floor(min(dur_list)))
 
     # Convert data to regularly sampled at specified frequency
-    for m in modalities:
-        print(f"Processing modality {m}")
-        for eid, (sid, lid) in tqdm(
-            enumerate(zip(eids[m][:-1], eids[m][1:])), total=num_episodes
-        ):
-            if not ep_flag[eid]:
-                continue
+    for stage in ["train", "val"]:
+        ep_flag = np.ones(num_episodes, dtype=bool)
+        if stage == "train":
+            ep_flag[val_ids] = False
+        elif stage == "val":
+            ep_flag[train_ids] = False
 
-            sid_off = sid + offset_id_list[m][eid][0]
-            lid_off = lid - offset_id_list[m][eid][1]
-            if not "max_dur" in cfg:
-                max_dur = durations[eid]
-            else:
-                max_dur = min(durations[eid], cfg.max_dur)
-            new_t = np.arange(0, max_dur, 1 / HZ[m])
-            _, time_ids = np.unique(
-                ts[m][sid_off:lid_off] - ts[m][sid_off], return_index=True
-            )
-            interp_data = interp1d(
-                ts[m][sid_off:lid_off][time_ids] - ts[m][sid_off],
-                data[m][sid_off:lid_off][time_ids],
-                axis=0,
-                assume_sorted=True,
-                fill_value="extrapolate",
-            )(new_t)
-            new_data[m].append(interp_data)
-            new_eids[m].append(new_eids[m][-1] + len(interp_data))
-            new_ts[m].append(new_t + ts[m][sid_off])
-        new_data[m] = np.concatenate(new_data[m], axis=0)
-        print(new_data[m].shape, new_eids[m][-1])
+        new_eids = {m: [0] for m in modalities}
+        new_data = {m: [] for m in modalities}
+        new_ts = {m: [] for m in modalities}
 
-    # Write data to new file
-    with h5py.File(
-        os.path.join(data_path, f"{cfg.data_dir}_{cfg.data_suffix}.h5"),
-        "w",
-    ) as hf:
-        for m in modalities:
-            hf.create_dataset(f"{m}_timestamps", data=np.concatenate(new_ts[m], axis=0))
-            hf.create_dataset(f"{m}_episode_ids", data=new_eids[m])
-            hf.create_dataset(f"{m}_frequency", data=HZ[m])
-            hf.create_dataset(m, data=new_data[m])
+        with h5py.File(
+            os.path.join(data_path, f"{cfg.data_dir}_{cfg.data_suffix}_{stage}.h5"),
+            "w",
+        ) as hf:
+            for m in modalities:
+                print(f"Processing modality {m}")
+                for eid, (sid, lid) in tqdm(
+                    enumerate(zip(eids[m][:-1], eids[m][1:])), total=num_episodes
+                ):
+                    if not ep_flag[eid]:
+                        continue
+
+                    sid_off = sid + offset_id_list[m][eid][0]
+                    lid_off = lid - offset_id_list[m][eid][1]
+                    if not "max_dur" in cfg:
+                        max_dur = durations[eid]
+                    else:
+                        max_dur = min(durations[eid], cfg.max_dur)
+                    new_t = np.arange(0, max_dur, 1 / HZ[m])
+                    _, time_ids = np.unique(
+                        ts[m][sid_off:lid_off] - ts[m][sid_off], return_index=True
+                    )
+                    interp_data = interp1d(
+                        ts[m][sid_off:lid_off][time_ids] - ts[m][sid_off],
+                        data[m][sid_off:lid_off][time_ids],
+                        axis=0,
+                        assume_sorted=True,
+                        fill_value="extrapolate",
+                    )(new_t)
+                    new_data[m].append(interp_data)
+                    new_eids[m].append(new_eids[m][-1] + len(interp_data))
+                    new_ts[m].append(new_t + ts[m][sid_off])
+                new_data[m] = np.concatenate(new_data[m], axis=0)
+                print(new_data[m].shape, new_eids[m][-1])
+                hf.create_dataset(
+                    f"{m}_timestamps", data=np.concatenate(new_ts[m], axis=0)
+                )
+                hf.create_dataset(f"{m}_episode_ids", data=new_eids[m])
+                hf.create_dataset(f"{m}_frequency", data=HZ[m])
+                hf.create_dataset(m, data=new_data[m])
+                del new_data[m]
 
 
 if __name__ == "__main__":

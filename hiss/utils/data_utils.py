@@ -53,7 +53,7 @@ DATA_FILENAME = {
     "xela": "touch_sensor_values.h5",
     "kinova": "kinova_cartesian_states.h5",
     "extreme3d": "extreme3d_values.h5",
-    "allegro_joint_states": "allegro_joint_states.h5",
+    "xela_sensor_pos": "allegro_joint_states.h5",
 }
 
 
@@ -80,5 +80,5 @@ DICT_KEY = {
     "kinova": lambda d: np.concatenate((d["positions"], d["orientations"]), axis=-1),
     "extreme3d": lambda d: np.concatenate((d["axes"], d["buttons"]), axis=-1),
     "tactile": lambda d: d["sensor_values"],
-    "allegro_joint_states": lambda d: d["positions"],
+    "xela_sensor_pos": lambda d: d["positions"],
 }

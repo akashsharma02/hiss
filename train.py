@@ -43,6 +43,7 @@ def main(cfg):
         append_input_deltas=cfg.append_input_deltas,
         train_subfrac=cfg.train_subfrac if "train_subfrac" in cfg else 1.0,
     )
+    print(f"Dataset sizes: train: {len(train_dset)}, val: {len(val_dset)}")
 
     # Set up training
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -63,6 +64,8 @@ def main(cfg):
     model = hydra.utils.instantiate(cfg.model.model, _recursive_=False)(
         input_dim=input_dim, output_dim=output_dim
     ).to(device)
+
+    print(f"Model: {model}")
 
     # Wrapper to downsample model outputs if necessary
     if "low_freq_factor" in cfg:
